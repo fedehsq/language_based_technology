@@ -33,10 +33,10 @@ type exp =
   i.e f(x) = x + 1  => x is the formal parameter, x + 1 is the body *)
   (* formal parameter with function body and permissions *)
   | Fun of string * exp * permission  
-  (* name to assign to fun exp, new permission to bind to fun, 
+  (* name to assign to fun exp, new permission(s), 
   exp in which evaluate es: let f x = x + x in f 5;; *)
   | EnableIn of string * exp * permission * exp 
-  (* name to assign to fun exp, permissions to remove from fun, 
+  (* name to assign to fun exp, permission(s) to remove, 
   exp in which evaluate es: let f x = x + x in f 5;; *)
   | DisableIn of string * exp * permission * exp 
   | Call of exp * exp;; (* Fun with acutal parameter *)
@@ -115,8 +115,7 @@ let rec check_all_permission (cp: permission) (gp: permission) : bool =
       false
   | p -> if p = None then true else check_one_permission p gp;;
 
-(* given a particular permission needed from a function, remove it
-matching it with the global ones of the function *)
+(* given a particular permission, remove it matching it with the global ones *)
 let rec remove_one_permission(cp: permission) (gp: permission) : permission =
   match gp with
   | Permission(p, pgs) ->
@@ -124,7 +123,7 @@ let rec remove_one_permission(cp: permission) (gp: permission) : permission =
   | p -> if p = cp then None else p
 
 
-(* given the permissions needed from a function, check if them can be granted 
+(* given the permissions needed, check if them can be granted 
   matching them with the global ones *)
 let rec remove_permission (cp: permission) (gp: permission) : permission =
   match cp with
@@ -174,6 +173,20 @@ let ieval (iexp: iexp) (gp: permission) (env: 'v env): value =
     | _ -> failwith("Type error")
     end;;
 
+  (* for debugging *)
+  let rec print_permission (p: permission) : unit =
+  match p with
+  | Write -> print_string("Write")
+  | Read -> print_string("Read")
+  | None -> print_string("None")
+  | Permission(cp, cps) -> 
+    begin match cp with
+    | Write -> print_string("Write"); print_permission cps
+    | Read -> print_string("Read"); print_permission cps
+    | None -> print_string("None"); print_permission cps
+    | _ -> print_permission cps
+  end;;
+
 (* interpreter *)
 let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
   | Enone -> None
@@ -215,7 +228,6 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       let new_env = bind ide v env in
       (* ... and use it in the body *)
       eval body new_env gp
-
   (* define functions*)
   (* ---- WARNING ----
       var isn't the name of function! It is the argument, 
@@ -223,23 +235,20 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       i.e f (x) = x + 1   =>  var is x! Not the name of function! 
       For naming a function we must use the builder LetIn! 
       *)
-  | Fun(_, _, _) -> ieval (Check(exp)) gp env
-
+  | Fun(_, _, _) -> ieval (Check(exp)) gp env (* security manager *)
   | EnableIn(ide, f, p, body) -> 
-    let ep = Permission(p, gp) in (* extend permissions *)
+    let ep = Permission(gp, p) in (* extend gloabl permissions *)
     let v = eval f env ep in (* add permission to f *)
     begin match v with 
-    (* check if v is a closure and use the new env with extended permissions in the body *)
+    (* check if v is a closure and use the new env with extended perms in the body *)
     | Closure(_, _, _) -> eval body (bind ide v env) ep
     | _ -> failwith("Type error")
     end
-
   | DisableIn(ide, f, p, body) -> 
-    (* rimuovo il permesso da quello globale! *)
-    let ep = remove_permission p gp in (* restrict permissions *)
-    let v = eval f env ep in (* add permission to f *)
+    let ep = remove_permission p gp in (* restrict global permissions *)
+    let v = eval f env ep in (* restrict permission to f *)
     begin match v with 
-    (* check if v is a closure and use the new env with extended permissions in the body *)
+    (* check if v is a closure and use the new env with restricted perms in the body *)
     | Closure(_, _, _) -> eval body (bind ide v env) ep
     | _ -> failwith("Type error")
     end
@@ -258,35 +267,35 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       end;;
     
 
-(* raise an exception because permissions requested by f are not enabled*)
+(* raise an exception because permissions requested by f are not enabled *)
 eval 
   (Call(Fun("x", Plus(Var("x"), Eint 5), Read), Var "y"))
   (bind "y" (Int 10) []) 
   None;;
 
-(* return the result because now permissions requested by f are enabled*)
+(* return the result because permissions requested by f are enabled *)
 eval 
-  (Call(Fun("x", Plus(Var("x"), Eint 5), Read), Var "y"))
+  (Call(Fun("x", Plus(Var("x"), Eint 5), Permission(Read, Write)), Var "y"))
   (bind "y" (Int 10) []) 
-  Read;;
+  (Permission(Read, Write));;
 
 (* global permissions granted only Read, but in this execution the special permission 
-Write is given to the function, so it can be called *)
+Write is added to the global one, so the function can be called *)
 eval
   (EnableIn("f", (* name to bind to the function *)
   Fun("x", Plus(Var("x"), Var "y"), Permission(Read, Write)), (* function definition *)
-  Write, (* new permission to grant to the function *)
+  Write, (* new permission to grant *)
   Call(Var "f", Var "y"))) (* where to evaluate the function *)
   (bind "y" (Int 10) []) (* environment *)
   Read;; (* global permissions *)
 
 (* global permissions granted Write | Read, which are such that requested by function
-but in this execution the special permission Write is removed from the function, 
-so it can't be called *)
+but in this execution the special permission Write is not granted anymore, 
+so f can't be called *)
 eval
   (DisableIn("f", (* name to bind to the function *)
   Fun("x", Plus(Var("x"), Var "y"), Permission(Read, Write)), (* function definition *)
-  Write, (* permission to remove from the function *)
+  Write, (* permission to remove *)
   Call(Var "f", Var "y"))) (* where to evaluate the function *)
   (bind "y" (Int 10) []) (* environment *)
   (Permission(Write, Read));; (* global permissions *)
