@@ -5,8 +5,9 @@ type permission =
   | None
   | Read
   | Write
-  | Permission of permission * permission (* list of permission *)
+  | Permission of permission * permission;; (* list of permission *)
 
+(* expressions of language *)
 type exp = 
   | Enone
   | Eint of int
@@ -43,6 +44,7 @@ type iexp =
 (* environment is a couple list of ide with their value *)
 type 'v env = (string * 'v)list;; 
 
+(* language values *)
 type value =
   | None
   | Int of int
@@ -54,53 +56,9 @@ type value =
 
 (* ---- DECLARATION OF FUNCTIONS ---- *)
 
-(* given a permission needed from a function, check if it can be granted 
-  matching them with the global ones *)
-let rec check_one_permission (cp: permission) (gp: permission) : bool =
-  match gp with
-  | Permission(p, pgs) ->
-    if p = cp then true else check_one_permission cp pgs
-  | p -> if cp = p then true else false;;
-    
-(* given the permissions needed from a function, check if them can be granted 
-  matching them with the global ones *)
-let rec check_all_permission (cp: permission) (gp: permission) : bool =
-  match cp with
-  (* Needed more than one permission by the function *)
-  | Permission(cp, cps) ->
-    (* check if the current requested permission is granted *)
-    if check_one_permission cp gp then 
-      check_all_permission cps gp 
-    else 
-      false
-  | p -> if p = None then true else check_one_permission p gp;;
-
 (* associate var with value to env *)
 let bind (var: string) (value: value) (env: 'v env) =
   (var, value)::env;;
-
-(* error message for missed permissions *)
-let print_error (cp: permission) (gp: permission) : string = 
-  let rec print_error (cp: permission) (fail_message : string) : string =
-    match cp with
-    | None -> ""
-    | Read -> fail_message ^ "Read can't be executed"
-    | Write -> fail_message ^ "Write can't be executed"
-    | Permission(p, ps) ->
-      begin match p with
-      | Read ->
-        if not(check_one_permission Read gp) then
-          print_error ps ("Read, " ^ fail_message)
-        else 
-          print_error ps fail_message
-      | Write ->
-        if not(check_one_permission Write gp) then
-          print_error ps ("Write, " ^ fail_message)
-        else 
-          print_error ps fail_message
-      | _ ->  print_error ps fail_message
-      end
-    in print_error cp "";;
 
 (* It checks if var has a associated value in the environment env  *)
 let rec lookup (env: 'v env) (var: string) : value = 
@@ -130,25 +88,69 @@ let calculator (op: string) (x: value) (y: value): value =
     | (_, _, _) -> failwith("Not yet implemented")
     end;;
 
+(* given a permission needed from a function, check if it can be granted 
+matching them with the global ones *)
+let rec check_one_permission (cp: permission) (gp: permission) : bool =
+  match gp with
+  | Permission(p, pgs) ->
+    if p = cp then true else check_one_permission cp pgs
+  | p -> if cp = p then true else false;;
+    
+(* given the permissions needed from a function, check if them can be granted 
+  matching them with the global ones *)
+let rec check_all_permission (cp: permission) (gp: permission) : bool =
+  match cp with
+  (* Needed more than one permission by the function *)
+  | Permission(cp, cps) ->
+    (* check if the current requested permission is granted *)
+    if check_one_permission cp gp then 
+      check_all_permission cps gp 
+    else 
+      false
+  | p -> if p = None then true else check_one_permission p gp;;
+
+(* error message for missed permissions *)
+let print_error (cp: permission) (gp: permission) : string = 
+  let rec print_error (cp: permission) (fail_message : string) : string =
+    match cp with
+    | None -> ""
+    | Read -> fail_message ^ "Read can't be executed"
+    | Write -> fail_message ^ "Write can't be executed"
+    | Permission(p, ps) ->
+      begin match p with
+      | Read ->
+        if not(check_one_permission Read gp) then
+          print_error ps ("Read, " ^ fail_message)
+        else 
+          print_error ps fail_message
+      | Write ->
+        if not(check_one_permission Write gp) then
+          print_error ps ("Write, " ^ fail_message)
+        else 
+          print_error ps fail_message
+      | _ ->  print_error ps fail_message
+      end
+    in print_error cp "";;
+
 (* 
 represents the security manager who checks whether the permissions
 requested by the function are granted; 
 in the event of a positive outcome, it returns the closure, 
 otherwise it raises an exception.
 *)
-let rec ieval (iexp: iexp) (gp: permission) (env: 'v env): value =
+let ieval (iexp: iexp) (gp: permission) (env: 'v env): value =
   match iexp with
   | Check(exp) -> 
     begin match exp with
     | Fun(var, body, p) -> 
-      if check_all_permission p gp then (* se qua volessi usare un mio if, come potrei fare? faccio ieval di If aggiungo a iexpr le cose che mi mancano*)
+      if check_all_permission p gp then 
         Closure(var, body, env) 
       else 
         failwith(print_error p gp)
     | _ -> failwith("Type error")
     end;;
 
-(* evaluate my language: interpreter *)
+(* interpreter *)
 let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
   | Enone -> None
   | Eint x -> Int x
