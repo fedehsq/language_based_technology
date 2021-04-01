@@ -31,8 +31,14 @@ type exp =
   i.e y (ide) = 5 (exp) in y + x (exp)  *)
   (* Fun is anonymous => it hasn't a name! 'ide' is the formal parameter!
   i.e f(x) = x + 1  => x is the formal parameter, x + 1 is the body *)
-  (* ------ FUN NEEDS PERMISSIONS TO OPERATE ------ *)
-  | Fun of string * exp * permission  (* formal parameter with function body and permissions *)
+  (* formal parameter with function body and permissions *)
+  | Fun of string * exp * permission  
+  (* name to assign to fun exp, new permission to bind to fun, 
+  exp in which evaluate es: let f x = x + x in f 5;; *)
+  | EnableIn of string * exp * permission * exp 
+  (* name to assign to fun exp, permissions to remove from fun, 
+  exp in which evaluate es: let f x = x + x in f 5;; *)
+  | DisableIn of string * exp * permission * exp 
   | Call of exp * exp;; (* Fun with acutal parameter *)
 
 (* I have defined a new syntactic type for the primitive construct that checks
@@ -108,6 +114,24 @@ let rec check_all_permission (cp: permission) (gp: permission) : bool =
     else 
       false
   | p -> if p = None then true else check_one_permission p gp;;
+
+(* given a particular permission needed from a function, remove it
+matching it with the global ones of the function *)
+let rec remove_one_permission(cp: permission) (gp: permission) : permission =
+  match gp with
+  | Permission(p, pgs) ->
+    if p = cp then pgs else Permission(pgs, remove_one_permission cp pgs)
+  | p -> if p = cp then None else p
+
+
+(* given the permissions needed from a function, check if them can be granted 
+  matching them with the global ones *)
+let rec remove_permission (cp: permission) (gp: permission) : permission =
+  match cp with
+  (* Needed more than one permission by the function *)
+  | Permission(cp, cps) ->
+    remove_permission (remove_one_permission cp gp) cps
+  | p -> remove_one_permission p gp (* devo matchare p con il primo di gp *)
 
 (* error message for missed permissions *)
 let print_error (cp: permission) (gp: permission) : string = 
@@ -200,8 +224,26 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       For naming a function we must use the builder LetIn! 
       *)
   | Fun(_, _, _) -> ieval (Check(exp)) gp env
-  (* Call a function f with p actual parameter 
-  i.e f(x) = x + 1 => f(5) = 6 *)
+
+  | EnableIn(ide, f, p, body) -> 
+    let ep = Permission(p, gp) in (* extend permissions *)
+    let v = eval f env ep in (* add permission to f *)
+    begin match v with 
+    (* check if v is a closure and use the new env with extended permissions in the body *)
+    | Closure(_, _, _) -> eval body (bind ide v env) ep
+    | _ -> failwith("Type error")
+    end
+
+  | DisableIn(ide, f, p, body) -> 
+    (* rimuovo il permesso da quello globale! *)
+    let ep = remove_permission p gp in (* restrict permissions *)
+    let v = eval f env ep in (* add permission to f *)
+    begin match v with 
+    (* check if v is a closure and use the new env with extended permissions in the body *)
+    | Closure(_, _, _) -> eval body (bind ide v env) ep
+    | _ -> failwith("Type error")
+    end
+  (* Call a function f with p actual parameter i.e f(x) = x + 1 => f(5) = 6 *)
   | Call(f, actual_param) -> 
       let func = eval f env gp in
       begin match func with
@@ -215,20 +257,36 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       | _ -> failwith("not a function")
       end;;
     
-let permissions : permission = None;;
-let env : value env = bind "x" (Int 10) [];;
-let f : exp = Fun("x", Plus(Var("x"), Eint 5), Read);;
-let g : exp = Fun("x", Plus(Var("x"), Eint 1), Write);;
-(* raise an exception because permissions requested bt f are not enabled*)
-eval f env permissions;;
-eval (Call(f, Eint 15)) env permissions;;
 
-let permissions : permission = Permission(Read, Write);;
+(* raise an exception because permissions requested by f are not enabled*)
+eval 
+  (Call(Fun("x", Plus(Var("x"), Eint 5), Read), Var "y"))
+  (bind "y" (Int 10) []) 
+  None;;
+
 (* return the result because now permissions requested by f are enabled*)
-eval f env permissions;;
-eval (Call(f, Eint 15)) env permissions;;
+eval 
+  (Call(Fun("x", Plus(Var("x"), Eint 5), Read), Var "y"))
+  (bind "y" (Int 10) []) 
+  Read;;
 
+(* global permissions granted only Read, but in this execution the special permission 
+Write is given to the function, so it can be called *)
+eval
+  (EnableIn("f", (* name to bind to the function *)
+  Fun("x", Plus(Var("x"), Var "y"), Permission(Read, Write)), (* function definition *)
+  Write, (* new permission to grant to the function *)
+  Call(Var "f", Var "y"))) (* where to evaluate the function *)
+  (bind "y" (Int 10) []) (* environment *)
+  Read;; (* global permissions *)
 
-(* idea Check deve prendere i permessi (?) !!!!
-cosi posso eleminiare l ieval, perche quando matcho con la funzione faccio eval
-del Check(permission) e check farà i controlli sui permessi della f *)
+(* global permissions granted Write | Read, which are such that requested by function
+but in this execution the special permission Write is removed from the function, 
+so it can't be called *)
+eval
+  (DisableIn("f", (* name to bind to the function *)
+  Fun("x", Plus(Var("x"), Var "y"), Permission(Read, Write)), (* function definition *)
+  Write, (* permission to remove from the function *)
+  Call(Var "f", Var "y"))) (* where to evaluate the function *)
+  (bind "y" (Int 10) []) (* environment *)
+  (Permission(Write, Read));; (* global permissions *)
