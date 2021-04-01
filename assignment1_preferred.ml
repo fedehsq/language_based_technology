@@ -32,7 +32,7 @@ type exp =
   i.e f(x) = x + 1  => x is the formal parameter, x + 1 is the body *)
   (* ------ FUN NEEDS PERMISSIONS TO OPERATE ------ *)
   | Fun of string * exp * permission  (* formal parameter with function body and permissions *)
-  | Call of exp * exp ;; (* Fun with acutal parameter *)
+  | Call of exp * exp;; (* Fun with acutal parameter *)
 
 (* I have defined a new syntactic type for the primitive construct that checks
 the permissions of functions rather than inserting it in exp 
@@ -136,16 +136,16 @@ requested by the function are granted;
 in the event of a positive outcome, it returns the closure, 
 otherwise it raises an exception.
 *)
-let rec ieval (iexp: iexp) (permission: permission) (env: 'v env): value =
+let rec ieval (iexp: iexp) (gp: permission) (env: 'v env): value =
   match iexp with
   | Check(exp) -> 
     begin match exp with
-    | Fun(var, body, perm) -> 
-      if check_all_permission perm permission then
+    | Fun(var, body, p) -> 
+      if check_all_permission p gp then (* se qua volessi usare un mio if, come potrei fare? faccio ieval di If aggiungo a iexpr le cose che mi mancano*)
         Closure(var, body, env) 
       else 
-        failwith(print_error perm permission)
-    | _ -> failwith("Not yet implemented")
+        failwith(print_error p gp)
+    | _ -> failwith("Type error")
     end;;
 
 (* evaluate my language: interpreter *)
@@ -187,11 +187,9 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       (* ... and bind this value to the ide for creating new env 
       (new value on the stack).. *)
       let new_env = bind ide v env in
-      (* check if v is a function that compare in the policies *)
-        begin match v with 
-        | Closure(_, _, _) -> eval body new_env gp
-        | _ ->  eval body new_env gp  (* ... and use it in the body *)
-      end
+      (* ... and use it in the body *)
+      eval body new_env gp
+
   (* define functions*)
   (* ---- WARNING ----
       var isn't the name of function! It is the argument, 
@@ -199,7 +197,7 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
       i.e f (x) = x + 1   =>  var is x! Not the name of function! 
       For naming a function we must use the builder LetIn! 
       *)
-  | Fun(var, body, permission) -> ieval (Check(exp)) gp env
+  | Fun(_, _, _) -> ieval (Check(exp)) gp env
   (* Call a function f with p actual parameter 
   i.e f(x) = x + 1 => f(5) = 6 *)
   | Call(f, actual_param) -> 
@@ -210,14 +208,15 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
         let a_p = eval actual_param env gp in
         (* BIND THE FORMAL PARAMETER TO THE ACTUAL ONE AND ADD THEM TO DECL ENV! *)
         let new_env = bind formal_param a_p decl_env in
-        (* calculate the fucking functions with the extened env! *)
+        (* calculate the functions with the extened env! *)
         eval body new_env gp
       | _ -> failwith("not a function")
       end;;
     
 let permissions : permission = None;;
 let env : value env = bind "x" (Int 10) [];;
-let f : exp = Fun("x", Plus(Var("x"), Eint 5), Permission(Write, Read));;
+let f : exp = Fun("x", Plus(Var("x"), Eint 5), Read);;
+let g : exp = Fun("x", Plus(Var("x"), Eint 1), Write);;
 (* raise an exception because permissions requested bt f are not enabled*)
 eval f env permissions;;
 eval (Call(f, Eint 15)) env permissions;;
@@ -226,3 +225,8 @@ let permissions : permission = Permission(Read, Write);;
 (* return the result because now permissions requested by f are enabled*)
 eval f env permissions;;
 eval (Call(f, Eint 15)) env permissions;;
+
+
+(* idea Check deve prendere i permessi (?) !!!!
+cosi posso eleminiare l ieval, perche quando matcho con la funzione faccio eval
+del Check(permission) e check farà i controlli sui permessi della f *)
