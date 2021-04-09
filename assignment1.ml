@@ -281,6 +281,13 @@ eval
   (bind "y" (Int 10) []) 
   (Permission(Read, Write));;
 
+(* raise an exception because permissions requested by second f are not enabled *)
+eval 
+  (Call(Fun("x", Plus(Var("x"), Eint 5), Read),
+   Call(Fun("z", Plus(Var("z"), Eint 5), Permission(Read, Write)), Var("y"))))
+  (bind "y" (Int 10) []) 
+  Read;;
+  
 (* global permissions granted only Read, but in this execution the special permission 
 Write is added to the global one, so the function can be called *)
 eval
@@ -290,6 +297,17 @@ eval
   Call(Var "f", Var "y"))) (* where to evaluate the function *)
   (bind "y" (Int 10) []) (* environment *)
   Read;; (* global permissions *)
+
+(* global permissions granted only Read, but in this execution the special permission 
+Write is added to the global one, so the second function can be called *)
+eval 
+  (Call(Fun("x", Plus(Var("x"), Eint 5), Read),
+  EnableIn("f", (* name to bind to the function *)
+  Fun("x", Plus(Var("x"), Var "y"), Permission(Read, Write)), (* function definition *)
+  Write, (* new permission to grant *)
+  Call(Var "f", Var "y"))))
+  (bind "y" (Int 10) []) 
+  Read;;
 
 (* global permissions granted Write | Read, which are such that requested by function
 but in this execution the special permission Write is not granted anymore, 
