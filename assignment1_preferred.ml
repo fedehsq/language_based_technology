@@ -238,17 +238,19 @@ let rec eval (exp: exp) (env: 'v env) (gp: permission): value = match exp with
   | Fun(_, _, _) -> ieval (Check(exp)) gp env (* security manager *)
   | EnableIn(ide, f, p, body) -> 
     let ep = Permission(gp, p) in (* extend gloabl permissions *)
-    let v = eval f env ep in (* add permission to f *)
+    let v = eval f env ep in (* evaluate f with new global permissions *)
     begin match v with 
-    (* check if v is a closure and use the new env with extended perms in the body *)
+    (* check if v is a closure, bind ide to f,
+       and use the new env with extended perms in the body *)
     | Closure(_, _, _) -> eval body (bind ide v env) ep
     | _ -> failwith("Type error")
     end
   | DisableIn(ide, f, p, body) -> 
     let ep = remove_permission p gp in (* restrict global permissions *)
-    let v = eval f env ep in (* restrict permission to f *)
+    let v = eval f env ep in (*  evaluate f with restricted global permissions *)
     begin match v with 
-    (* check if v is a closure and use the new env with restricted perms in the body *)
+    (* check if v is a closure, bind ide to f,
+       and use the new env with restricted perms in the body *)
     | Closure(_, _, _) -> eval body (bind ide v env) ep
     | _ -> failwith("Type error")
     end
