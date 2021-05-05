@@ -45,7 +45,6 @@ else if (op == "/") then
 else
   failwith("operation not exists")
 
-
 let rec eval (e: expr) (env: 'v env): value = match e with 
   | Mbool b -> Bool b
   | MInt x -> Int x
@@ -75,17 +74,3 @@ let rec eval (e: expr) (env: 'v env): value = match e with
       end
   | (_) -> failwith("not yet implemented")
   ;;
-
-  (* declare environment*)
-  eval (Var "y") ["y", Int 5];;
-
-(*
-let b = Mbool true;;
-MInt 5;;
-Var("y");;
-Let("x", MInt(5), MInt 5);; (* no sensa *)
-
-let x = 3 in true;;
-*)
-
-
